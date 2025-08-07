@@ -19,7 +19,10 @@ const auth = async (req, res, next) => {
 
     try {
       // Verify token
+      console.log('🔐 JWT_SECRET available:', !!process.env.JWT_SECRET);
+      console.log('🎫 Token to verify:', token.substring(0, 50) + '...');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log('✅ Token decoded successfully:', decoded.id);
       
       // Get user from token
       const user = await User.findById(decoded.id);
@@ -34,6 +37,7 @@ const auth = async (req, res, next) => {
       req.user = user;
       next();
     } catch (error) {
+      console.error('❌ JWT verification error:', error.message);
       return res.status(401).json({
         success: false,
         message: 'Invalid token.'

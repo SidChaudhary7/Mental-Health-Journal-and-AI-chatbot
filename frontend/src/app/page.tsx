@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { PlusCircle, BookOpen, MessageCircle, BarChart3, User, Heart } from 'lucide-react';
+import { PlusCircle, BookOpen, MessageCircle, BarChart3, User, Heart, Calendar, Smile, Meh, Frown } from 'lucide-react';
+import { journalApi } from '@/lib/api';
+import { JournalEntry } from '@/types';
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
+  const [recentEntries, setRecentEntries] = useState<JournalEntry[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -13,8 +17,48 @@ export default function Home() {
     
     if (token && userData) {
       setUser(JSON.parse(userData));
+      fetchRecentEntries();
     }
   }, []);
+
+  const fetchRecentEntries = async () => {
+    try {
+      setLoading(true);
+      const response = await journalApi.getAll({ limit: 3 });
+      if (response.data) {
+        setRecentEntries(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch recent entries:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getMoodIcon = (mood: string) => {
+    switch (mood) {
+      case 'very_happy':
+      case 'happy':
+        return <Smile className="h-4 w-4 text-green-500" />;
+      case 'neutral':
+        return <Meh className="h-4 w-4 text-yellow-500" />;
+      case 'sad':
+      case 'very_sad':
+        return <Frown className="h-4 w-4 text-red-500" />;
+      default:
+        return <Meh className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   if (!user) {
     return (
@@ -149,8 +193,57 @@ export default function Home() {
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
-          <p className="text-gray-600">Your recent journal entries and chat sessions will appear here.</p>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Recent Activity</h3>
+            <Link href="/journal" className="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+              View all entries
+            </Link>
+          </div>
+          
+          {loading ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mx-auto"></div>
+              <p className="mt-2 text-gray-600 text-sm">Loading recent entries...</p>
+            </div>
+          ) : recentEntries.length === 0 ? (
+            <div className="text-center py-8">
+              <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-600">No journal entries yet.</p>
+              <Link 
+                href="/journal/new"
+                className="text-indigo-600 hover:text-indigo-800 text-sm font-medium mt-2 inline-block"
+              >
+                Write your first entry
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {recentEntries.map((entry) => (
+                <div key={entry._id || entry.id} className="border-l-4 border-indigo-200 pl-4 py-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      {getMoodIcon(entry.mood)}
+                      <div>
+                        <Link 
+                          href={`/journal/${entry._id || entry.id}`}
+                          className="font-medium text-gray-900 hover:text-indigo-600"
+                        >
+                          {entry.title}
+                        </Link>
+                        <p className="text-gray-600 text-sm mt-1 line-clamp-2">
+                          {entry.content.substring(0, 100)}...
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center text-gray-500 text-xs">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      {formatDate(entry.createdAt)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

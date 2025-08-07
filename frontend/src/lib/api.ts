@@ -20,7 +20,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 60000, // Increased to 60 seconds for AI responses
   withCredentials: false, // Disable credentials for now to test
 });
 
@@ -28,9 +28,15 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
+    console.log('🔑 Using token:', token ? `${token.substring(0, 20)}...` : 'NO TOKEN');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    console.log('📤 API Request:', {
+      method: config.method,
+      url: config.baseURL + config.url,
+      headers: config.headers
+    });
     return config;
   },
   (error) => {
@@ -41,13 +47,22 @@ api.interceptors.request.use(
 
 // Response interceptor to handle auth errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('📥 API Response:', {
+      status: response.status,
+      url: response.config.url,
+      data: response.data
+    });
+    return response;
+  },
   (error) => {
-    console.error('API Error Details:', {
+    console.error('❌ API Error Details:', {
       message: error.message,
-      response: error.response,
-      request: error.request,
-      config: error.config
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      responseData: error.response?.data,
+      requestUrl: error.config?.url,
+      requestMethod: error.config?.method
     });
     
     if (error.response?.status === 401) {
@@ -166,8 +181,10 @@ export const journalApi = {
 // Analysis API
 export const analysisApi = {
   analyze: async (entryId: string): Promise<ApiResponse<{ entryId: string; analysis: any }>> => {
+    console.log('🧠 Requesting AI analysis for entry:', entryId);
     const response: AxiosResponse<ApiResponse<{ entryId: string; analysis: any }>> = 
-      await api.post(`/analysis/analyze/${entryId}`);
+      await api.post(`/analysis/analyze/${entryId}`, {});
+    console.log('📊 Analysis response:', response.data);
     return response.data;
   },
   
@@ -178,13 +195,56 @@ export const analysisApi = {
   },
 };
 
+// Analytics API
+export const analyticsApi = {
+  getOverview: async (): Promise<ApiResponse<{
+    totalEntries: number;
+    entriesThisMonth: number;
+    averageWellness: number;
+    analyzedEntriesCount: number;
+    moodDistribution: Record<string, number>;
+  }>> => {
+    const response = await api.get('/analytics/overview');
+    return response.data;
+  },
+  
+  getTrends: async (period: number = 30): Promise<ApiResponse<{
+    period: number;
+    totalEntries: number;
+    averageWellness: number;
+    averageSentiment: number;
+    trends: Array<{
+      date: string;
+      wellnessScore: number;
+      sentimentScore: number;
+      mood: string;
+      title: string;
+    }>;
+    moodFrequency: Record<string, number>;
+  }>> => {
+    const response = await api.get(`/analytics/trends?period=${period}`);
+    return response.data;
+  },
+  
+  getInsights: async (): Promise<ApiResponse<{
+    insights: Array<{
+      type: 'success' | 'warning' | 'info';
+      title: string;
+      message: string;
+    }>;
+  }>> => {
+    const response = await api.get('/analytics/insights');
+    return response.data;
+  },
+};
+
 // Chat API
 export const chatApi = {
   createSession: async (data?: {
     title?: string;
     sessionType?: string;
   }): Promise<ApiResponse<ChatSession>> => {
-    const response: AxiosResponse<ApiResponse<ChatSession>> = await api.post('/chat/sessions', data);
+    const response: AxiosResponse<ApiResponse<ChatSession>> = await api.post('/chat/sessions', data || {});
     return response.data;
   },
   
