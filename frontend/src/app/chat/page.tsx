@@ -4,20 +4,16 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Heart, MessageCircle, Send, Bot, User } from 'lucide-react';
+import { chatApi } from '@/lib/api';
 
 export default function ChatPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      role: 'assistant' as const,
-      content: "Hello! I'm your AI wellness companion. I'm here to listen, provide support, and help you work through any thoughts or feelings you'd like to discuss. How are you feeling today?",
-      timestamp: new Date().toISOString()
-    }
-  ]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [currentSession, setCurrentSession] = useState<any>(null);
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
     // Check if user is logged in
@@ -30,64 +26,98 @@ export default function ChatPage() {
     }
     
     setUser(JSON.parse(userData));
+    initializeChat();
   }, [router]);
+
+  const initializeChat = async () => {
+    try {
+      setInitializing(true);
+      
+      // Check for existing sessions
+      const sessionsResponse = await chatApi.getSessions();
+      console.log('📞 Sessions response:', sessionsResponse);
+      
+      if (sessionsResponse.data && sessionsResponse.data.length > 0) {
+        // Use the most recent session
+        const recentSession = sessionsResponse.data[0];
+        setCurrentSession(recentSession);
+        setMessages(recentSession.messages || []);
+      } else {
+        // Create a new session
+        const newSessionResponse = await chatApi.createSession();
+        console.log('🆕 New session response:', newSessionResponse);
+        if (newSessionResponse.data) {
+          setCurrentSession(newSessionResponse.data);
+          setMessages(newSessionResponse.data.messages || []);
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to initialize chat:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      // Fallback to default message
+      setMessages([{
+        _id: '1',
+        role: 'assistant',
+        content: "Hello! I'm your AI wellness companion. I'm here to listen, provide support, and help you work through any thoughts or feelings you'd like to discuss. How are you feeling today?",
+        timestamp: new Date().toISOString()
+      }]);
+    } finally {
+      setInitializing(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || loading) return;
+    if (!newMessage.trim() || loading || !currentSession) return;
 
-    const userMessage = {
-      id: Date.now().toString(),
-      role: 'user' as const,
-      content: newMessage,
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    const messageContent = newMessage.trim();
     setNewMessage('');
     setLoading(true);
 
-    // Simulate AI response (replace with actual API call)
-    setTimeout(() => {
-      const aiMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant' as const,
-        content: getAIResponse(newMessage),
+    // Add user message to UI immediately
+    const userMessage = {
+      _id: Date.now().toString(),
+      role: 'user',
+      content: messageContent,
+      timestamp: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      // Send message to backend and get AI response
+      const response = await chatApi.sendMessage(currentSession._id, messageContent);
+      
+      if (response.data && response.data.messages) {
+        // Update with the complete conversation from backend
+        setMessages(response.data.messages);
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      
+      // Add error message to UI
+      const errorMessage = {
+        _id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: "I apologize, but I'm experiencing some technical difficulties right now. However, I want you to know that I'm still here to listen. Could you tell me more about what's on your mind?",
         timestamp: new Date().toISOString()
       };
-      setMessages(prev => [...prev, aiMessage]);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
-  const getAIResponse = (userMessage: string): string => {
-    // Simple response logic (replace with actual AI integration)
-    const lowerMessage = userMessage.toLowerCase();
-    
-    if (lowerMessage.includes('sad') || lowerMessage.includes('depressed')) {
-      return "I hear that you're feeling sad. It's completely normal to have these feelings, and I appreciate you sharing this with me. What's been contributing to these feelings lately? Sometimes talking through what's on your mind can help.";
-    }
-    
-    if (lowerMessage.includes('anxious') || lowerMessage.includes('anxiety')) {
-      return "Anxiety can be really challenging to deal with. You're not alone in feeling this way. Have you tried any breathing exercises or grounding techniques? I can guide you through some if you'd like.";
-    }
-    
-    if (lowerMessage.includes('happy') || lowerMessage.includes('good')) {
-      return "It's wonderful to hear that you're feeling positive! What's been going well for you? Celebrating these good moments is important for your overall wellbeing.";
-    }
-    
-    if (lowerMessage.includes('stress') || lowerMessage.includes('overwhelmed')) {
-      return "Feeling stressed or overwhelmed is something many people experience. Let's break this down - what's the main source of your stress right now? Sometimes identifying specific stressors can help us find ways to manage them.";
-    }
-    
-    return "Thank you for sharing that with me. I'm here to listen and support you. Can you tell me more about what's on your mind? Sometimes it helps to talk through your thoughts and feelings.";
-  };
 
-  if (!user) {
+  if (!user || initializing) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading...</p>
+        <p className="mt-4 text-gray-600">{initializing ? 'Initializing chat...' : 'Loading...'}</p>
       </div>
     </div>;
   }
@@ -130,7 +160,7 @@ export default function ChatPage() {
           <div className="space-y-6">
             {messages.map((message) => (
               <div
-                key={message.id}
+                key={message._id || message.id}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div className={`flex max-w-3xl ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>

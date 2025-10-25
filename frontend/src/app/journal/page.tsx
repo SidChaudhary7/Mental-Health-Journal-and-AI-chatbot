@@ -4,10 +4,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Heart, PlusCircle, BookOpen, Calendar, Smile, Meh, Frown } from 'lucide-react';
+import { journalApi } from '@/lib/api';
+import { JournalEntry } from '@/types';
 
 export default function JournalPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     // Check if user is logged in
@@ -20,9 +25,31 @@ export default function JournalPage() {
     }
     
     setUser(JSON.parse(userData));
+    fetchEntries();
   }, [router]);
 
-  if (!user) {
+  const fetchEntries = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const response = await journalApi.getAll();
+      console.log('📖 Journal entries fetched:', response);
+      
+      if (response.data) {
+        setEntries(response.data);
+      } else {
+        setEntries([]);
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to fetch journal entries:', error);
+      setError('Failed to load journal entries');
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!user || loading) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
@@ -46,25 +73,14 @@ export default function JournalPage() {
     }
   };
 
-  // Mock data for demonstration
-  const mockEntries = [
-    {
-      id: '1',
-      title: 'A Good Day',
-      content: 'Today was a really good day. I felt energized and productive...',
-      mood: 'happy',
-      date: '2024-08-06',
-      tags: ['work', 'productivity']
-    },
-    {
-      id: '2',
-      title: 'Feeling Anxious',
-      content: 'Had some anxiety about the upcoming presentation...',
-      mood: 'sad',
-      date: '2024-08-05',
-      tags: ['anxiety', 'work']
-    }
-  ];
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,9 +115,16 @@ export default function JournalPage() {
           </Link>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+
         {/* Journal Entries */}
         <div className="space-y-6">
-          {mockEntries.length === 0 ? (
+          {entries.length === 0 ? (
             <div className="text-center py-12">
               <BookOpen className="h-16 w-16 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No journal entries yet</h3>
@@ -116,8 +139,8 @@ export default function JournalPage() {
             </div>
           ) : (
             <div className="grid gap-6">
-              {mockEntries.map((entry) => (
-                <div key={entry.id} className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow">
+              {entries.map((entry) => (
+                <div key={entry._id || entry.id} className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center space-x-3">
                       {getMoodIcon(entry.mood)}
@@ -125,7 +148,7 @@ export default function JournalPage() {
                     </div>
                     <div className="flex items-center text-gray-500 text-sm">
                       <Calendar className="h-4 w-4 mr-1" />
-                      {entry.date}
+                      {formatDate(entry.createdAt)}
                     </div>
                   </div>
                   
@@ -135,7 +158,7 @@ export default function JournalPage() {
                   
                   <div className="flex items-center justify-between">
                     <div className="flex flex-wrap gap-2">
-                      {entry.tags.map((tag) => (
+                      {entry.tags && entry.tags.map((tag) => (
                         <span 
                           key={tag}
                           className="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full"
@@ -145,7 +168,7 @@ export default function JournalPage() {
                       ))}
                     </div>
                     <Link 
-                      href={`/journal/${entry.id}`}
+                      href={`/journal/${entry._id || entry.id}`}
                       className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                     >
                       Read more
